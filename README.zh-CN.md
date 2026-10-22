@@ -11,21 +11,24 @@ JustOneAPI 授权后调用接口。
 
 JustOneAPI MCP 支持远程 Streamable HTTP 和本地 stdio。当前已验证及兼容方式包括：
 
-- ChatGPT Web Developer mode 自定义 MCP 连接：OAuth，已验证。
-- Codex CLI 和 Codex IDE 扩展：OAuth，已验证。
+- ChatGPT Web 自定义 MCP 连接：需在高级 OAuth 设置中明确选择 DCR；已有 DCR 连接已验证可读取目录。
+- Codex CLI 和 Codex IDE 扩展：显式指定 DCR 的 OAuth 路径，已验证。
 - Cursor、Hermes Agent 及其他支持自定义请求头的客户端：现有 API Token 兼容方式。
 - Claude.ai、Claude Desktop 和 Claude Code：OAuth 仍在兼容性测试中；Claude Code 可继续使用
   现有 API Token 请求头。
 
-支持兼容 OAuth 注册流程的客户端，只需要填写远程地址，再在浏览器中完成授权。能否直接连接还
-取决于客户端支持的注册方式及账号或工作区策略。暂不支持 OAuth 的客户端仍可继续使用原有 API
-Token 请求头或本地 stdio。
+截至 2026-10-22，ChatGPT 的 CIMD 接入存在授权失败问题，暂不推荐。仅填写地址并选择 OAuth
+可能自动使用 CIMD；DCR 成功不代表 CIMD 可用。CIMD 将在服务端网络访问和完整授权流程验证
+通过后恢复推荐，不以服务器迁移完成作为可用保证。现有正常工作的 DCR 连接可以继续使用。
+
+能否连接取决于客户端支持的 OAuth 注册方式及账号或工作区策略。暂不支持 OAuth 的客户端仍可
+继续使用原有 API Token 请求头或本地 stdio。
 
 ## 快速接入
 
 ### 使用 OAuth 的远程 HTTP
 
-生产服务已开启 OAuth，直接把下面的地址添加为 MCP 连接即可：
+生产服务支持 DCR OAuth。使用下面的地址，并按客户端步骤明确选择 DCR：
 
 ```text
 https://mcp.justoneapi.com/mcp
@@ -33,14 +36,17 @@ https://mcp.justoneapi.com/mcp
 
 兼容的客户端会发现受保护资源信息，跳转到 `auth.justoneapi.com`，并申请授权页展示的 MCP
 权限。不需要把 JustOneAPI API Token 粘贴进客户端。具体入口、OAuth 注册方式和账号限制因
-客户端而异，下面只列出已经验证的 OAuth 路径。
+客户端而异。ChatGPT 的自动发现可能优先选中 CIMD，请核对实际注册方式。
 
 #### 各客户端接入方式
 
-- **ChatGPT Web：**打开 `Settings → Security and login` 并启用 `Developer mode`，进入
-  `Plugins` 页面后点击 `+`，填写名称、说明和上面的 `/mcp` 地址，Authentication 选择 OAuth。
-  创建连接后，由 ChatGPT 自动发现认证信息，并在连接流程或首次调用需要授权的工具时进入授权
-  流程。Developer mode 是否可见可能取决于 ChatGPT 账号和工作区策略。
+- **ChatGPT Web：**如账号要求，先在设置中启用 `Developer mode`。进入 `Plugins`，点击
+  `+ → Add custom MCP server`，填写名称、说明和上面的 `/mcp` 地址。Authentication 选择
+  `OAuth`，展开 `Advanced OAuth settings`，等待发现完成，然后将 `Registration method`
+  改为 `Dynamic Client Registration (DCR)`。确认 `Registration URL` 为
+  `https://auth.justoneapi.com/oauth2/register`，按需要选择 scope，再创建并安装插件。无需填写
+  client ID、client secret 或静态 API Token。随后在连接或调用受保护工具时登录 JustOneAPI
+  并批准授权。如果没有 DCR 选项，使用下方 Codex DCR 方式或联系支持，不要反复重试默认 CIMD。
 - **Codex CLI / IDE 扩展：**执行下面的命令。当前推荐显式使用已经验证的 DCR 注册路径：
 
 ```bash
@@ -51,9 +57,13 @@ codex mcp login justoneapi \
   --oauth-client-registration dcr
 ```
 
-ChatGPT 桌面端、Codex CLI 和 Codex IDE 扩展会读取同一台 Codex 主机上的 MCP 配置。ChatGPT
-和 Codex 的当前入口可查看 [OpenAI MCP 官方文档](https://developers.openai.com/codex/mcp/)及
-[ChatGPT 连接测试说明](https://developers.openai.com/plugins/deploy/connect-chatgpt)。
+Codex CLI 和 Codex IDE 扩展共享 MCP 配置；ChatGPT Web 连接需要单独设置，不会继承 Codex
+登录时选择的 DCR。参见 [OpenAI MCP 官方文档](https://developers.openai.com/codex/mcp/)和
+[OpenAI 认证说明](https://developers.openai.com/plugins/build/auth)。
+
+若授权请求中的 `client_id` 是 `https://chatgpt.com/oauth/client.json`，该请求使用 CIMD。
+请核对高级设置中的注册方式；`invalid_request` 也可能有其他原因。DCR 仍失败时，向支持提供
+发生时间、注册方式和错误信息，不要发送 API Token、授权码或其他凭据。
 
 Claude.ai、Claude Desktop 和 Claude Code 的 OAuth 接入仍在兼容性测试中，暂不列为正式支持的
 OAuth 连接方式。Claude Code 可以通过 `--header "Authorization: Bearer your_token"` 使用现有

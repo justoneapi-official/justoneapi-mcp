@@ -13,23 +13,30 @@ the required parameters, and call APIs through your JustOneAPI authorization.
 JustOneAPI MCP supports remote Streamable HTTP and local stdio. Current verified
 and compatibility paths include:
 
-- ChatGPT web Developer mode MCP connections: OAuth, verified.
-- Codex CLI and the Codex IDE extension: OAuth, verified.
+- ChatGPT web custom MCP connections: explicitly select DCR in advanced OAuth
+  settings. An existing DCR connection has been verified with a catalog read.
+- Codex CLI and the Codex IDE extension: explicit DCR OAuth, verified.
 - Cursor, Hermes Agent, and other clients with custom headers: existing API
   Token compatibility method.
 - Claude.ai, Claude Desktop, and Claude Code: OAuth remains under compatibility
   testing; Claude Code can use an existing API Token header.
 
-Clients with a compatible OAuth registration flow can connect with only the
-remote URL and complete authorization in the browser. Compatibility also
-depends on client registration support and account or workspace policy. Clients
-without OAuth can keep using a legacy API Token header or local stdio.
+As of October 22, 2026, ChatGPT CIMD connections can fail during authorization
+and are temporarily not recommended. Entering the URL and choosing OAuth alone
+can select CIMD automatically. A working DCR connection does not establish CIMD
+compatibility. CIMD guidance will resume after server-side network access and
+the complete authorization flow have been verified; migration alone does not
+establish availability. Existing working DCR connections can remain in use.
+
+Compatibility depends on OAuth registration support and account or workspace
+policy. Clients without OAuth can keep using a legacy API Token header or local stdio.
 
 ## Quick Start
 
 ### Remote HTTP with OAuth
 
-OAuth is enabled on the production service. Add this URL as an MCP connection:
+Production supports DCR OAuth. Use this URL and explicitly select DCR using the
+client instructions below:
 
 ```text
 https://mcp.justoneapi.com/mcp
@@ -38,17 +45,20 @@ https://mcp.justoneapi.com/mcp
 Compatible clients discover the protected-resource metadata, redirect you to
 `auth.justoneapi.com`, and ask for the MCP scopes shown on the consent page.
 No JustOneAPI API Token needs to be pasted into the client. Entry points, OAuth
-registration methods, and account restrictions vary by client, so the setup
-below lists only verified OAuth paths.
+registration methods, and account restrictions vary by client. ChatGPT discovery
+can prefer CIMD, so check the selected registration method.
 
 #### Client setup
 
-- **ChatGPT web:** open `Settings → Security and login`, enable `Developer mode`,
-  open `Plugins`, and select `+`. Enter a name, description, and the `/mcp` URL
-  above, then choose OAuth for Authentication. After creating the connection,
-  ChatGPT discovers the authentication metadata and starts authorization during
-  connection or when a protected tool is first invoked. Developer mode
-  availability can depend on the ChatGPT account and workspace policy.
+- **ChatGPT web:** enable `Developer mode` in settings if your account requires it.
+  Open `Plugins` and select `+ → Add custom MCP server`. Enter a name, description,
+  and the `/mcp` URL above. Choose `OAuth`, expand `Advanced OAuth settings`, and
+  wait for discovery. Set `Registration method` to `Dynamic Client Registration (DCR)`.
+  Confirm `Registration URL` is `https://auth.justoneapi.com/oauth2/register`, select
+  the scopes you need, then create and install the plugin. No client ID, client
+  secret, or static API Token is required. Sign in to JustOneAPI and approve access
+  when connecting or invoking a protected tool. If DCR is unavailable, use the Codex
+  DCR setup below or contact support instead of repeatedly retrying default CIMD.
 - **Codex CLI / IDE extension:** run the commands below. The currently
   recommended setup explicitly uses the verified DCR registration path:
 
@@ -60,11 +70,16 @@ codex mcp login justoneapi \
   --oauth-client-registration dcr
 ```
 
-The ChatGPT desktop app, Codex CLI, and Codex IDE extension share MCP
-configuration on the same Codex host. See the
+Codex CLI and the Codex IDE extension share MCP configuration. ChatGPT web
+connections are configured separately and do not inherit the DCR choice from a
+Codex login. See the
 [official OpenAI MCP documentation](https://developers.openai.com/codex/mcp/)
-and [ChatGPT connection testing guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
-for current entry points.
+and [OpenAI authentication documentation](https://developers.openai.com/plugins/build/auth).
+
+An authorization request with `client_id=https://chatgpt.com/oauth/client.json`
+uses CIMD. Check the registration method in advanced settings. Other problems can
+also cause `invalid_request`. If DCR fails, send support the time, registration
+method, and error message without API Tokens, authorization codes, or other credentials.
 
 OAuth for Claude.ai, Claude Desktop, and Claude Code remains under compatibility
 testing and is not yet offered as a generally supported OAuth connection.
