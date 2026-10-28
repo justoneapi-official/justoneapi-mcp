@@ -23,6 +23,7 @@ import {
 import { catalogSafetyContext } from "./release.js";
 
 type OpenApiSchema = {
+  $ref?: string;
   type?: string;
   format?: string;
   description?: string;
@@ -70,6 +71,7 @@ type OpenApiOperation = {
 
 type OpenApiDocument = {
   paths?: Record<string, Record<string, OpenApiOperation>>;
+  components?: { schemas?: Record<string, OpenApiSchema> };
   tags?: Array<{
     name?: string;
     description?: string;
@@ -102,7 +104,7 @@ export type BuildCatalogOptions = {
 };
 
 const VERSION_RE = /^v\d+$/i;
-export const CATALOG_GENERATOR_VERSION = "6";
+export const CATALOG_GENERATOR_VERSION = "7";
 
 export function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -140,6 +142,8 @@ export function buildCatalogBundle(options: BuildCatalogOptions): CatalogBundle 
           parsed,
           operation,
           zhOperation,
+          options.openapi,
+          options.openapiZh,
           platformMetadata.get(parsed.platform) ??
             operation.tags
               ?.map((tag) => platformMetadata.get(`tag:${tag.toLowerCase()}`))
@@ -274,9 +278,11 @@ function buildEndpoint(
   parsed: { platform: string; methodName: string; version: string },
   operation: OpenApiOperation,
   zhOperation: OpenApiOperation | undefined,
+  source: OpenApiDocument,
+  localizedSource: OpenApiDocument | null | undefined,
   platformMetadata?: PlatformMetadata
 ): EndpointCatalogEntry {
-  const params = buildParams(path, method, operation, zhOperation);
+  const params = buildParams(path, method, operation, zhOperation, source, localizedSource);
   const highlightsEn = normalizeHighlights(operation["x-highlights"]);
   const highlights = normalizeHighlights(
     zhOperation?.["x-highlights"] ?? operation["x-highlights"]
@@ -354,7 +360,9 @@ function buildParams(
   path: string,
   method: EndpointCatalogEntry["method"],
   operation: OpenApiOperation,
-  zhOperation?: OpenApiOperation
+  zhOperation: OpenApiOperation | undefined,
+  source: OpenApiDocument,
+  localizedSource: OpenApiDocument | null | undefined
 ): EndpointParam[] {
   const params: EndpointParam[] = [];
   const operationIdentity = { path, method };
@@ -393,11 +401,16 @@ function buildParams(
     params.push(fromOpenApiParam(param, zhParamDescriptions.get(param.name)));
   }
 
-  const bodySchemas = requestBodySchemas(operation, zhOperation);
+  const bodySchemas = requestBodySchemas(operation, zhOperation, source, localizedSource);
   if (bodySchemas) {
     const [schema, zhSchema] = bodySchemas;
     const required = new Set(schema.required ?? []);
-    for (const [apiName, property] of Object.entries(schema.properties ?? {})) {
+    for (const [apiName, propertySchema] of Object.entries(schema.properties ?? {})) {
+      const property = resolveRequestSchema(propertySchema, source)!;
+      const localizedProperty = resolveRequestSchema(
+        zhSchema?.properties?.[apiName],
+        localizedSource
+      );
       if (isCredentialParameterName(apiName)) {
         if (
           isAllowedLegacyPaginationParameter(operationIdentity, {
@@ -419,7 +432,7 @@ function buildParams(
               location: "body",
               required: required.has(apiName),
               schema: property,
-              description: zhSchema?.properties?.[apiName]?.description,
+              description: localizedProperty?.description,
               descriptionEn: property.description,
             })
           );
@@ -439,7 +452,7 @@ function buildParams(
           location: "body",
           required: required.has(apiName),
           schema: property,
-          description: zhSchema?.properties?.[apiName]?.description,
+          description: localizedProperty?.description,
           descriptionEn: property.description,
         })
       );
@@ -498,13 +511,40 @@ function fromSchemaParam(input: {
 
 function requestBodySchemas(
   operation: OpenApiOperation,
-  zhOperation?: OpenApiOperation
+  zhOperation: OpenApiOperation | undefined,
+  source: OpenApiDocument,
+  localizedSource: OpenApiDocument | null | undefined
 ): [OpenApiSchema, OpenApiSchema | undefined] | null {
   const contentType = requestContentType(operation);
   if (!contentType) return null;
   const schema = operation.requestBody?.content?.[contentType]?.schema;
   const zhSchema = zhOperation?.requestBody?.content?.[contentType]?.schema;
-  return schema ? [schema, zhSchema] : null;
+  return schema
+    ? [resolveRequestSchema(schema, source)!, resolveRequestSchema(zhSchema, localizedSource)]
+    : null;
+}
+
+/** Resolve only local request-schema references; never fetch external documents. */
+function resolveRequestSchema(
+  schema: OpenApiSchema | undefined,
+  source: OpenApiDocument | null | undefined
+): OpenApiSchema | undefined {
+  const seen = new Set<string>();
+  while (schema?.$ref) {
+    const reference = schema.$ref;
+    const prefix = "#/components/schemas/";
+    if (!reference.startsWith(prefix) || seen.has(reference)) {
+      throw new Error("Unsupported or circular OpenAPI request-schema reference");
+    }
+    seen.add(reference);
+    const name = reference.slice(prefix.length).replace(/~1/g, "/").replace(/~0/g, "~");
+    const target = source?.components?.schemas?.[name];
+    if (!target) throw new Error("Unresolved OpenAPI request-schema reference");
+    const overrides = { ...schema };
+    delete overrides.$ref;
+    schema = { ...target, ...overrides };
+  }
+  return schema;
 }
 
 function requestContentType(operation: OpenApiOperation): string | undefined {

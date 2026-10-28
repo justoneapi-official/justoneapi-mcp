@@ -13,10 +13,7 @@ type BaseRuntimeContext = {
 };
 
 export type ApiKeyCredentialSource =
-  | "env"
-  | "authorization-bearer"
-  | "authorization-raw"
-  | "x-header";
+  "env" | "authorization-bearer" | "authorization-raw" | "x-header";
 
 export type StdioRuntimeContext = BaseRuntimeContext & {
   transport: "stdio";

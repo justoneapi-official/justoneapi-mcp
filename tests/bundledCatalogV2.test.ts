@@ -15,7 +15,7 @@ describe("released bundled catalog V2 fail-safe smoke", () => {
   it("passes the complete bundled catalog through the release safety gate", () => {
     expect(() => assertSafeCatalogValue(bundledCatalog, "bundled catalog")).not.toThrow();
     expect(endpoints.every((endpoint) => !endpoint.endpoint_family?.includes(":"))).toBe(true);
-    expect(bundledCatalog.meta.generator_version).toBe("6");
+    expect(bundledCatalog.meta.generator_version).toBe("7");
     expect(bundledCatalog.meta.security).toEqual({
       safety_policy_version: expect.any(String),
     });
@@ -54,7 +54,8 @@ describe("released bundled catalog V2 fail-safe smoke", () => {
       )
     ).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "CAPABILITY", concept: "post_coupon_price" }),
+        expect.objectContaining({ kind: "CONDITION", concept: "product_price" }),
+        expect.objectContaining({ kind: "CAPABILITY", concept: "sku_options" }),
       ])
     );
     expect(
@@ -79,14 +80,10 @@ describe("released bundled catalog V2 fail-safe smoke", () => {
     );
   });
 
-  it("selects the reviewed coupon capability instead of guidance", () => {
+  it("does not claim coupon pricing when the current source documents only conditional product prices", () => {
     const output = search("淘宝券后价");
-    expect(output.results[0]?.endpoint_id).toBe("taobao.get_item_detail_v4");
-    expect(output.results[0]?.matched_capabilities).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "CAPABILITY", concept: "post_coupon_price" }),
-      ])
-    );
+    expect(output.results).toEqual([]);
+    expect(output.confidence).toBe("low");
   });
 
   it("uses the current note-detail conditions and limitations during discovery", () => {
@@ -161,10 +158,36 @@ describe("released bundled catalog V2 fail-safe smoke", () => {
     (query) => {
       const output = search(query);
       expect(output.ranking_version).toBe("v2");
-      expect(output.results[0]?.endpoint_id).toBe("douyin.share_url_transfer_v1");
+      expect(output.results.map((result) => result.endpoint_id)).toContain(
+        "douyin.share_url_transfer_v1"
+      );
       expect(output.confidence).toBe("low");
     }
   );
+
+  it("includes all 1688 endpoints, recommended versions, and the complete JSON conversion input", () => {
+    expect(endpoints.filter((endpoint) => endpoint.platform === "1688")).toHaveLength(21);
+    for (const id of [
+      "1688.get_item_detail_v2",
+      "1688.search_item_list_v2",
+      "1688.get_category_item_list_v2",
+      "1688.search_cross_border_item_by_image_v2",
+    ]) {
+      expect(endpoints.find((endpoint) => endpoint.endpoint_id === id)?.recommended).toBe(true);
+    }
+    const conversion = endpoints.find(
+      (endpoint) => endpoint.endpoint_id === "1688.convert_image_v1"
+    );
+    expect(conversion?.content_type).toBe("application/json");
+    expect(conversion?.params.map((param) => [param.name, param.api_name, param.in])).toEqual([
+      ["url", "url", "body"],
+      ["img_base64", "imgBase64", "body"],
+      ["search_api_endpoint", "searchApiEndpoint", "body"],
+    ]);
+    for (const query of ["1688图片转链", "1688 image conversion"]) {
+      expect(search(query).results[0]?.endpoint_id).toBe("1688.convert_image_v1");
+    }
+  });
 
   it("does not inject generic discovery tokens into every endpoint", () => {
     for (const token of ["search", "detail", "comment", "video", "note"]) {

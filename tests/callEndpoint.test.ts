@@ -162,6 +162,104 @@ describe("callEndpoint", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["legacy", "oauth"] as const)(
+    "sends JSON body values with isolated %s credentials",
+    async (kind) => {
+      const jsonBundle: CatalogBundle = {
+        ...bundle,
+        catalog: {
+          endpoints: [
+            {
+              ...bundle.catalog.endpoints[0],
+              endpoint_id: "1688.convert_image_v1",
+              method: "POST",
+              path: "/api/1688/convert-image/v1",
+              content_type: "application/json",
+              params: [
+                { ...bundle.catalog.endpoints[0].params[0], in: "body", api_name: "url" },
+                { ...bundle.catalog.endpoints[0].params[1], in: "body" },
+                {
+                  name: "enabled",
+                  api_name: "enabled",
+                  in: "body",
+                  type: "boolean",
+                  required: false,
+                  description: "",
+                  description_en: "",
+                },
+                {
+                  name: "target",
+                  api_name: "searchApiEndpoint",
+                  in: "query",
+                  type: "string",
+                  required: false,
+                  description: "",
+                  description_en: "",
+                },
+              ],
+            },
+          ],
+        },
+      };
+      const base = runtime(jsonBundle);
+      const ctx: RuntimeContext =
+        kind === "legacy"
+          ? base
+          : {
+              ...base,
+              transport: "worker",
+              oauthAdvertised: true,
+              auth: {
+                kind: "oauth",
+                accessToken: "mcp-access-token",
+                accessTokenHash: "f".repeat(64),
+                clientId: "client",
+                subject: "subject",
+                connectionId: "connection",
+                scopes: new Set(["mcp:api:call"]),
+                exchange: async () => ({
+                  token: "delegated-token",
+                  expiresAt: Date.now() + 120000,
+                }),
+              },
+            };
+      const fetchMock = vi.fn(async (_url: URL | RequestInfo, _init?: RequestInit) =>
+        Response.json({ code: 0, data: { image_url: "/search/imgextra/example.jpg" } })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callEndpoint(
+        {
+          endpoint_id: "1688.convert_image_v1",
+          params: {
+            keyword: "https://example.com/image.jpg",
+            page: "2",
+            enabled: "false",
+            target: "standard",
+          },
+        },
+        ctx
+      );
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [requestUrl, init] = fetchMock.mock.calls[0];
+      const url = new URL(String(requestUrl));
+      const headers = new Headers(init?.headers);
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        url: "https://example.com/image.jpg",
+        page: 2,
+        enabled: false,
+      });
+      expect(url.searchParams.get("searchApiEndpoint")).toBe("standard");
+      expect(url.searchParams.has("url")).toBe(false);
+      expect(url.searchParams.get("token")).toBe(kind === "legacy" ? "test-token" : null);
+      expect(headers.get("authorization")).toBe(kind === "oauth" ? "Bearer delegated-token" : null);
+      expect(String(init?.body)).not.toMatch(/test-token|delegated-token|mcp-access-token/);
+    }
+  );
+
   it("returns the upstream payload unchanged without catalog security configuration", async () => {
     const payload = {
       code: 0,

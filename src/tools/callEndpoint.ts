@@ -165,8 +165,10 @@ async function callUpstream(
 ): Promise<UpstreamPayload> {
   const url = new URL(endpoint.path, ctx.config.baseUrl);
   const body = new URLSearchParams();
+  const jsonBody: Record<string, unknown> = {};
   const useFormBody =
     endpoint.method !== "GET" && endpoint.content_type === "application/x-www-form-urlencoded";
+  const useJsonBody = endpoint.method !== "GET" && endpoint.content_type === "application/json";
 
   if (credential.kind === "api-key") {
     if (useFormBody) body.set("token", credential.token);
@@ -175,6 +177,10 @@ async function callUpstream(
 
   for (const [param, value] of apiParams.entries()) {
     if (value === undefined || value === null) continue;
+    if (param.in === "body" && useJsonBody) {
+      jsonBody[param.api_name] = value;
+      continue;
+    }
     const encoded = encodeParamValue(value);
     if (param.in === "body" || useFormBody) {
       body.set(param.api_name, encoded);
@@ -189,11 +195,12 @@ async function callUpstream(
       method: endpoint.method,
       headers: {
         ...(useFormBody ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+        ...(useJsonBody ? { "content-type": "application/json" } : {}),
         ...(credential.kind === "oauth-delegation"
           ? { authorization: `Bearer ${credential.bearerToken}` }
           : {}),
       },
-      body: useFormBody ? body : undefined,
+      body: useFormBody ? body : useJsonBody ? JSON.stringify(jsonBody) : undefined,
     },
     ctx.config.timeoutMs
   );
