@@ -26,18 +26,20 @@ describe("Worker private JWKS", () => {
     await expect(verifyActiveSigningKey(parsed, "a-new")).resolves.toBeUndefined();
   });
 
-  it("rejects an RSA private JWK that imports but cannot verify against its public fields", async () => {
+  it("rejects an RSA private JWK with inconsistent public and private fields", async () => {
     const fixture = await createPrivateJwks(["active"]);
     const key = fixture.keys[0];
-    const finalCharacter = key.n?.at(-1);
-    if (!key.n || !finalCharacter) throw new Error("fixture modulus is missing");
+    if (!key.n) throw new Error("fixture modulus is missing");
+    const modulus = Buffer.from(key.n, "base64url");
+    modulus[modulus.length - 1] ^= 2;
     const mutated = {
       ...key,
-      n: `${key.n.slice(0, -1)}${finalCharacter === "A" ? "B" : "A"}`,
+      n: modulus.toString("base64url"),
     };
     const parsed = parsePrivateJwkSet(JSON.stringify({ keys: [mutated] }));
     await expect(verifyActiveSigningKey(parsed, "active")).rejects.toMatchObject({
-      code: "signing_key_verification_failed",
+      // Some crypto runtimes reject the inconsistent key during import, before signing.
+      code: expect.stringMatching(/^signing_key_(?:import|verification)_failed$/),
     });
   });
 
