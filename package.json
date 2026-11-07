@@ -1,6 +1,6 @@
 {
   "name": "justoneapi-mcp",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "description": "MCP server for JustOneAPI - expose API endpoints to AI assistants via Model Context Protocol",
   "main": "dist/index.js",
@@ -30,11 +30,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/justoneapi/justoneapi-mcp.git"
+    "url": "https://github.com/justoneapi-official/justoneapi-mcp.git"
   },
-  "homepage": "https://github.com/justoneapi/justoneapi-mcp#readme",
+  "homepage": "https://github.com/justoneapi-official/justoneapi-mcp#readme",
   "bugs": {
-    "url": "https://github.com/justoneapi/justoneapi-mcp/issues"
+    "url": "https://github.com/justoneapi-official/justoneapi-mcp/issues"
   },
   "engines": {
     "node": ">=18.0.0"
