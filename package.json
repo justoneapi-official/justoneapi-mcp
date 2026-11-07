@@ -43,11 +43,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/justoneapi/justoneapi-mcp.git"
+    "url": "https://github.com/justoneapi-official/justoneapi-mcp.git"
   },
-  "homepage": "https://github.com/justoneapi/justoneapi-mcp#readme",
+  "homepage": "https://github.com/justoneapi-official/justoneapi-mcp#readme",
   "bugs": {
-    "url": "https://github.com/justoneapi/justoneapi-mcp/issues"
+    "url": "https://github.com/justoneapi-official/justoneapi-mcp/issues"
   },
   "engines": {
     "node": ">=20.0.0"
