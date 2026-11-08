@@ -1,0 +1,123 @@
+name: Publish reviewed MCP Registry entry
+
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_commit:
+        description: Exact 40-character main commit approved for this registry entry
+        required: true
+        type: string
+      publish:
+        description: Publish this reviewed entry if the exact version is absent
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mcp-registry-justoneapi
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      registry_state: ${{ steps.registry.outputs.state }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Require the exact reviewed main commit and bounded entry
+        env:
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+        run: node scripts/registry-release.mjs validate
+      - name: Check release guards offline
+        run: node --test tests/registry-release.test.mjs
+      - name: Read the exact registry version without authentication
+        id: registry
+        run: node scripts/registry-release.mjs check --github-output
+
+  publish:
+    needs: preflight
+    if: inputs.publish && needs.preflight.outputs.registry_state == 'absent'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.8
+      MCP_PUBLISHER_SHA256: 09f1fa70ee146b640584274a1a6b2b8a0310b05d4321fa9224e6df6a016d67f4
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Recheck the approved commit
+        env:
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+        run: node scripts/registry-release.mjs validate
+      - name: Install the pinned signature verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - name: Download and verify the fixed publisher artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_dir="${RUNNER_TEMP}/justoneapi-registry-publisher"
+          mkdir -p "$tool_dir"
+          cd "$tool_dir"
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$archive" | sha256sum --check --strict
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+      - name: Read again immediately before publication
+        id: immediate
+        run: node scripts/registry-release.mjs check --github-output
+      - name: Authenticate and submit at most once
+        if: steps.immediate.outputs.state == 'absent'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_dir="${RUNNER_TEMP}/justoneapi-registry-publisher"
+          cd "$tool_dir"
+          if ! timeout 60s ./mcp-publisher login github-oidc > auth.log 2>&1; then
+            echo "Registry authentication failed. No credentials or authentication logs were exported."
+            exit 1
+          fi
+          # An uncertain result is resolved by a GET readback, never by replaying publish.
+          if ! timeout 60s ./mcp-publisher publish "${GITHUB_WORKSPACE}/server.json" > publish.log 2>&1; then
+            echo "Publisher did not report success. The following step will independently read the exact version."
+          fi
+      - name: Independently verify the reviewed public entry
+        if: always() && steps.immediate.outcome == 'success'
+        run: node scripts/registry-release.mjs verify
+      - name: Remove this runner's publisher authentication and private logs
+        if: always()
+        shell: bash
+        run: |
+          tool_dir="${RUNNER_TEMP}/justoneapi-registry-publisher"
+          if test -x "$tool_dir/mcp-publisher"; then
+            (cd "$tool_dir" && ./mcp-publisher logout > /dev/null 2>&1) || true
+          fi
+          rm -f "$tool_dir/auth.log" "$tool_dir/publish.log"
