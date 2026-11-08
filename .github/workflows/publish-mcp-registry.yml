@@ -40,7 +40,7 @@ jobs:
           REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
         run: node scripts/registry-release.mjs validate
       - name: Check release guards offline
-        run: node --test tests/registry-release.test.mjs
+        run: node --test scripts/registry-release.check.mjs
       - name: Read the exact registry version without authentication
         id: registry
         run: node scripts/registry-release.mjs check --github-output

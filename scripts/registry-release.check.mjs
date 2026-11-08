@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   checkRegistry, validateCandidate, validateCommit, versionURL,
-} from "../scripts/registry-release.mjs";
+} from "./registry-release.mjs";
 
 const entry = JSON.parse(await readFile(new URL("../server.json", import.meta.url), "utf8"));
 const response = (status, body) => new Response(JSON.stringify(body), { status });
