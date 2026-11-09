@@ -11,7 +11,7 @@ const clone = () => structuredClone(entry);
 const record = server => ({ server, _meta: { "io.modelcontextprotocol.registry/official": { status: "active" } } });
 
 test("a reviewed entry is addressed by exact namespace and version", () => {
-  assert.equal(versionURL(entry), "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.justoneapi-official%2Fjustoneapi/versions/2.0.0");
+  assert.equal(versionURL(entry), "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.justoneapi-official%2Fjustoneapi/versions/2.0.1");
 });
 
 test("unreviewed destinations, packages, headers and versions cannot be submitted", () => {
@@ -19,8 +19,12 @@ test("unreviewed destinations, packages, headers and versions cannot be submitte
     e => { e.remotes[0].url = "https://example.com/mcp"; },
     e => { e.remotes[0].headers = [{ name: "Authorization", value: "not-a-real-secret" }]; },
     e => { e.packages = []; },
-    e => { e.version = "2.0.1"; },
+    e => { e.version = "2.0.2"; },
     e => { e.name = "io.github.someone/other"; },
+    e => { e.icons[0].src = "https://example.com/icon.png"; },
+    e => { e.icons[0].mimeType = "image/svg+xml"; },
+    e => { e.icons[0].sizes = ["96x96"]; },
+    e => { e.icons.push({ src: "https://example.com/extra.png" }); },
   ]) {
     const changed = clone(); mutate(changed);
     assert.throws(() => validateCandidate(changed));
@@ -65,6 +69,7 @@ test("unreviewed remote headers or packages are not hidden by projection", async
   for (const server of [
     { ...clone(), packages: [{ identifier: "some-package" }] },
     { ...clone(), remotes: [{ ...entry.remotes[0], headers: [{ name: "X-Key", value: "fake" }] }] },
+    { ...clone(), icons: [{ ...entry.icons[0], src: "https://example.com/icon.png" }] },
   ]) assert.equal((await checkRegistry(entry, async () => response(200, record(server)))).state, "conflict");
 });
 

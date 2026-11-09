@@ -40,7 +40,7 @@ function runtime(
 }
 
 describe("canonical MCP tool descriptors", () => {
-  it("advertises exact OAuth scopes for dual-mode Worker tools and hides refresh", () => {
+  it("advertises public catalog tools and exact protected OAuth scopes and hides refresh", () => {
     const descriptors = createCanonicalToolDescriptors(runtime("worker", true));
     expect(descriptors.map((tool) => tool.name)).toEqual([
       "search_endpoints",
@@ -51,17 +51,15 @@ describe("canonical MCP tool descriptors", () => {
       "list_platforms",
     ]);
     for (const descriptor of descriptors) {
-      expect(descriptor.securitySchemes).toEqual([
-        {
-          type: "oauth2",
-          scopes:
-            descriptor.name === "call_endpoint"
-              ? ["mcp:api:call"]
-              : descriptor.name.startsWith("get_account") || descriptor.name === "get_usage_summary"
-                ? ["mcp:account:read"]
-                : ["mcp:catalog:read"],
-        },
-      ]);
+      const scope =
+        descriptor.name === "call_endpoint"
+          ? "mcp:api:call"
+          : descriptor.name === "get_account_balance" || descriptor.name === "get_usage_summary"
+            ? "mcp:account:read"
+            : undefined;
+      expect(descriptor.securitySchemes).toEqual(
+        scope ? [{ type: "oauth2", scopes: [scope] }] : [{ type: "noauth" }]
+      );
       expect(descriptor._meta?.securitySchemes).toEqual(descriptor.securitySchemes);
       expect(descriptor).toHaveProperty("title");
       expect(descriptor).toHaveProperty("annotations");
@@ -73,8 +71,13 @@ describe("canonical MCP tool descriptors", () => {
     const dark = createCanonicalToolDescriptors(runtime("worker", false));
     expect(dark).toHaveLength(6);
     for (const descriptor of dark) {
-      expect(descriptor).not.toHaveProperty("securitySchemes");
-      expect(descriptor).not.toHaveProperty("_meta");
+      if (["search_endpoints", "get_endpoint_schema", "list_platforms"].includes(descriptor.name)) {
+        expect(descriptor.securitySchemes).toEqual([{ type: "noauth" }]);
+        expect(descriptor._meta?.securitySchemes).toEqual(descriptor.securitySchemes);
+      } else {
+        expect(descriptor).not.toHaveProperty("securitySchemes");
+        expect(descriptor).not.toHaveProperty("_meta");
+      }
     }
 
     const stdio = createCanonicalToolDescriptors(runtime("stdio"));

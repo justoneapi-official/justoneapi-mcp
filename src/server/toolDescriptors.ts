@@ -15,15 +15,15 @@ export type CanonicalToolDescriptor = Tool & {
 export function createCanonicalToolDescriptors(ctx: RuntimeContext): CanonicalToolDescriptor[] {
   return toolDefinitionsFor(ctx).map((definition) => {
     const securitySchemes: SecurityScheme[] | undefined =
-      ctx.transport === "worker" && ctx.oauthAdvertised
-        ? [
-            {
-              type: "oauth2",
-              scopes: [...definition.requiredScopes],
-            },
-          ]
-        : ctx.transport === "stdio"
-          ? [{ type: "noauth" }]
+      ctx.transport === "stdio" || definition.requiredScopes.length === 0
+        ? [{ type: "noauth" }]
+        : ctx.oauthAdvertised
+          ? [
+              {
+                type: "oauth2",
+                scopes: [...definition.requiredScopes],
+              },
+            ]
           : undefined;
 
     const inputSchema = toMcpInputSchema(definition.inputSchema);

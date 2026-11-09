@@ -3,6 +3,19 @@ import { toolDefinitions } from "../server/toolRegistry.js";
 
 const MAX_MCP_REQUEST_BODY_BYTES = 1024 * 1024;
 
+const PUBLIC_MCP_METHODS = new Set([
+  "initialize",
+  "notifications/initialized",
+  "ping",
+  "tools/list",
+  "server/discover",
+]);
+const PUBLIC_REMOTE_TOOLS = new Set(
+  toolDefinitions
+    .filter((definition) => definition.remote && definition.requiredScopes.length === 0)
+    .map((definition) => definition.name)
+);
+
 const REMOTE_TOOL_SCOPES = new Map<string, McpOAuthScope>(
   toolDefinitions.flatMap((definition) =>
     definition.remote && definition.requiredScopes.length === 1
@@ -12,13 +25,19 @@ const REMOTE_TOOL_SCOPES = new Map<string, McpOAuthScope>(
 );
 
 export type InspectedMcpRequest =
-  | { kind: "ok"; parsedBody?: unknown; requiredScope?: McpOAuthScope }
+  | {
+      kind: "ok";
+      parsedBody?: unknown;
+      allowAnonymous?: boolean;
+      requiredScope?: McpOAuthScope;
+    }
   | { kind: "rejected"; response: Response };
 
 /**
  * Parse a clone so the MCP adapter still owns the original request stream.
- * This gate only makes authorization decisions for an exact tools/call
- * envelope; malformed envelopes remain the protocol adapter's responsibility.
+ * Only explicitly public methods and registered public tools bypass auth.
+ * Scope checks and anonymous access use the body, never client-supplied routing
+ * headers alone. Malformed envelopes remain the protocol adapter's responsibility.
  */
 export async function inspectMcpRequest(request: Request): Promise<InspectedMcpRequest> {
   if (request.method.toUpperCase() !== "POST") return { kind: "ok" };
@@ -53,14 +72,40 @@ export async function inspectMcpRequest(request: Request): Promise<InspectedMcpR
   }
   if (!isRecord(parsedBody)) return { kind: "ok", parsedBody };
 
-  if (parsedBody.method !== "tools/call") return { kind: "ok", parsedBody };
+  const method = parsedBody.method;
+  const headerMethod = request.headers.get("mcp-method");
+  const headerName = request.headers.get("mcp-name");
+  if (headerMethod !== null && headerMethod !== method) {
+    return {
+      kind: "rejected",
+      response: jsonRpcErrorResponse(400, -32600, "MCP method header does not match the body."),
+    };
+  }
+
+  if (method !== "tools/call") {
+    return {
+      kind: "ok",
+      parsedBody,
+      allowAnonymous:
+        parsedBody.jsonrpc === "2.0" &&
+        typeof method === "string" &&
+        PUBLIC_MCP_METHODS.has(method),
+    };
+  }
   const params = parsedBody.params;
   if (!isRecord(params) || typeof params.name !== "string") {
     return { kind: "ok", parsedBody };
   }
+  if (headerName !== null && headerName !== params.name) {
+    return {
+      kind: "rejected",
+      response: jsonRpcErrorResponse(400, -32600, "MCP tool name header does not match the body."),
+    };
+  }
   return {
     kind: "ok",
     parsedBody,
+    allowAnonymous: parsedBody.jsonrpc === "2.0" && PUBLIC_REMOTE_TOOLS.has(params.name),
     requiredScope: REMOTE_TOOL_SCOPES.get(params.name),
   };
 }

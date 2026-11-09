@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { RuntimeContext } from "../common/runtime.js";
-import { authorizeScope } from "../common/runtime.js";
 import { searchEndpoints as rankEndpoints } from "../search/rank.js";
 
 export const SearchEndpointsInput = z.object({
@@ -18,7 +17,6 @@ export async function searchEndpoints(
   input: z.infer<typeof SearchEndpointsInput>,
   ctx: RuntimeContext
 ) {
-  authorizeScope(ctx, "mcp:catalog:read");
   const bundle = await ctx.catalogManager.load();
   const result = rankEndpoints(bundle.catalog.endpoints, input, {
     mode: ctx.config.searchV2Enabled ? "v2" : "legacy",

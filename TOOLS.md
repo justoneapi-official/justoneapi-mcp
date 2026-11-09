@@ -10,9 +10,17 @@ search_endpoints -> get_endpoint_schema -> call_endpoint
 
 ## Authentication and scopes
 
-Remote OAuth clients receive per-tool security descriptors. Catalog tools use
-`mcp:catalog:read`, `call_endpoint` uses `mcp:api:call`, and both account tools
-use `mcp:account:read`. A missing OAuth scope is returned as an HTTP 403 Bearer
+Remote clients can initialize, ping, list tools, and send the initialization
+notification without authentication. `list_platforms`, `search_endpoints`, and
+`get_endpoint_schema` are public catalog queries advertised as `noauth`; they do
+not consume paid API calls or read account data.
+Stateless `2026-07-28` clients can also call `server/discover` anonymously.
+
+Only `call_endpoint`, `get_account_balance`, and `get_usage_summary` require
+credentials. `call_endpoint` uses `mcp:api:call`, and both account tools use
+`mcp:account:read`. The previous `mcp:catalog:read` scope remains accepted for
+existing OAuth grants but is not required for catalog reads. Missing credentials
+return HTTP 401. A missing OAuth scope is returned as an HTTP 403 Bearer
 challenge before dispatch and is also retained in the tool result metadata for
 MCP clients that consume `mcp/www_authenticate` there.
 

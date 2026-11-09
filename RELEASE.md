@@ -98,3 +98,30 @@ with an explicit HTTPS origin list in the same reviewed configuration commit.
 
 Live OpenAPI verification remains a separate manual/deploy gate because it
 depends on mutable external catalog data; it is not part of npm prepublish.
+
+## Public catalog and Registry metadata update
+
+The remote Worker allows anonymous handshake/discovery and the three public
+catalog tools. API dispatch and account tools continue to require credentials.
+Verify both supported protocol lanes and both OAuth modes, including the public
+`noauth` descriptors, HTTP 401 for anonymous protected calls, HTTP 403 for missing
+OAuth scopes, and rejection of expired credentials. Catalog requests must not
+perform introspection, token exchange, or API/account calls unless the client
+explicitly supplies an OAuth credential that needs verification.
+Unsupported standalone-stream and session probes return HTTP 405 without an
+OAuth challenge, so a Streamable HTTP client can discover the catalog without
+being sent into authentication by its background GET probe.
+
+Run `npm run validate:offline`, the CLI/Worker builds, generated-type checks,
+and `node --test scripts/registry-release.check.mjs` before release. Use mock
+upstream responses for API/account regressions; acceptance does not require paid
+API requests.
+
+`server.json` uses Registry metadata version `2.0.1`, adds the existing public
+256x256 brand PNG, and describes anonymous discovery accurately. This metadata
+version does not publish a new npm package. The reviewed publisher remains
+restricted to the exact entry and commit. After the Worker rollout is separately
+approved and verified, publish the new entry through
+`.github/workflows/publish-mcp-registry.yml` and read back the exact version plus
+`latest` to confirm the icon and description. Do not overwrite the existing
+`2.0.0` Registry entry or retry an uncertain publication without a readback.

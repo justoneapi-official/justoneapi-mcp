@@ -4,13 +4,13 @@ import { pathToFileURL } from "node:url";
 
 export const registryOrigin = "https://registry.modelcontextprotocol.io";
 export const reviewedName = "io.github.justoneapi-official/justoneapi";
-export const reviewedVersion = "2.0.0";
+export const reviewedVersion = "2.0.1";
 
 const fields = [
-  "$schema", "name", "title", "description", "version", "repository", "websiteUrl", "remotes",
+  "$schema", "name", "title", "description", "version", "repository", "websiteUrl", "icons", "remotes",
 ];
 
-// This is the deliberately bounded first registry release, not a general publisher.
+// This is a deliberately bounded reviewed registry release, not a general publisher.
 // The official JSON schema is independently checked during release preparation.
 export function validateCandidate(entry) {
   assert.ok(entry && typeof entry === "object" && !Array.isArray(entry), "Invalid registry entry");
@@ -19,8 +19,11 @@ export function validateCandidate(entry) {
   assert.equal(entry.name, reviewedName, "Unreviewed registry namespace");
   assert.equal(entry.version, reviewedVersion, "Unreviewed registry version");
   assert.equal(entry.title, "JustOneAPI", "Unreviewed registry title");
-  assert.equal(entry.description, "Discover and call social media and e-commerce data APIs with JustOneAPI authentication.");
+  assert.equal(entry.description, "Discover social and commerce APIs without login; authenticate for API calls and account data.");
   assert.equal(entry.websiteUrl, "https://justoneapi.com/en");
+  assert.deepEqual(entry.icons, [{
+    src: "https://justoneapi.com/logo/justoneapi-brand.png", mimeType: "image/png", sizes: ["256x256"],
+  }]);
   assert.deepEqual(entry.repository, {
     url: "https://github.com/justoneapi-official/justoneapi-mcp", source: "github",
   });
@@ -46,7 +49,7 @@ function publicResult(state, httpStatus) {
 function matchesReviewedEntry(server, entry) {
   if (!server || typeof server !== "object" || Array.isArray(server)) return false;
   // Ignore the registry's optional schema annotation and assigned GitHub repo ID.
-  // No unreviewed packages, headers, templates, publisher metadata, or icons pass.
+  // No unreviewed packages, headers, templates, publisher metadata, or icon changes pass.
   const copy = structuredClone(server);
   if (copy.$schema !== undefined && copy.$schema !== entry.$schema) return false;
   if (copy.$schema !== undefined) delete copy.$schema;
