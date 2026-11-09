@@ -167,13 +167,14 @@ describe("released bundled catalog V2 fail-safe smoke", () => {
 
   it("includes all 1688 endpoints, recommended versions, and the complete JSON conversion input", () => {
     expect(endpoints.filter((endpoint) => endpoint.platform === "1688")).toHaveLength(21);
+    for (const id of ["1688.get_item_detail_v2", "1688.search_item_list_v2"]) {
+      expect(endpoints.find((endpoint) => endpoint.endpoint_id === id)?.recommended).toBe(true);
+    }
     for (const id of [
-      "1688.get_item_detail_v2",
-      "1688.search_item_list_v2",
       "1688.get_category_item_list_v2",
       "1688.search_cross_border_item_by_image_v2",
     ]) {
-      expect(endpoints.find((endpoint) => endpoint.endpoint_id === id)?.recommended).toBe(true);
+      expect(endpoints.find((endpoint) => endpoint.endpoint_id === id)?.recommended).toBe(false);
     }
     const conversion = endpoints.find(
       (endpoint) => endpoint.endpoint_id === "1688.convert_image_v1"

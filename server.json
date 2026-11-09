@@ -2,13 +2,20 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.justoneapi-official/justoneapi",
   "title": "JustOneAPI",
-  "description": "Discover and call social media and e-commerce data APIs with JustOneAPI authentication.",
-  "version": "2.0.0",
+  "description": "Discover social and commerce APIs without login; authenticate for API calls and account data.",
+  "version": "2.0.1",
   "repository": {
     "url": "https://github.com/justoneapi-official/justoneapi-mcp",
     "source": "github"
   },
   "websiteUrl": "https://justoneapi.com/en",
+  "icons": [
+    {
+      "src": "https://justoneapi.com/logo/justoneapi-brand.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"]
+    }
+  ],
   "remotes": [
     {
       "type": "streamable-http",

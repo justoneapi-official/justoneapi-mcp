@@ -120,9 +120,43 @@ async function mcpResponse(
   manager: CatalogManager,
   oauthConfig: WorkerOAuthConfig
 ): Promise<Response> {
+  // Stateless HTTP has no standalone stream or session to delete. Return the
+  // transport's unsupported-method status before auth so client GET probes do
+  // not spuriously start an OAuth flow during anonymous catalog discovery.
+  if (request.method.toUpperCase() !== "POST") {
+    return methodNotAllowed(["POST", "OPTIONS"]);
+  }
   const appConfig = loadWorkerConfig(env);
   const credential = classifyCredential(request.headers);
   const oauthEnabled = oauthConfig.mode === "dual" && isCanonicalOAuthHost(request);
+
+  if (credential.kind === "none") {
+    const inspected = await inspectMcpRequest(request);
+    if (inspected.kind === "rejected") return inspected.response;
+    if (!inspected.allowAnonymous) {
+      return oauthEnabled
+        ? bearerAuthChallengeResponse(
+            new OAuthError(OAuthErrorCode.InvalidToken, "Bearer authentication is required"),
+            { resourceMetadataUrl: MCP_PROTECTED_RESOURCE_METADATA_URL }
+          )
+        : Response.json(
+            { error: "invalid_token" },
+            { status: 401, headers: { "Cache-Control": "no-store" } }
+          );
+    }
+    return await serveMcp(
+      request,
+      {
+        transport: "worker",
+        oauthAdvertised: oauthEnabled,
+        config: appConfig,
+        catalogManager: manager,
+        logger: stderrLogger,
+        auth: { kind: "none" },
+      },
+      inspected.parsedBody
+    );
+  }
 
   if (!oauthEnabled) {
     if (credential.kind === "invalid") return hiddenCredentialError(credential);
@@ -132,37 +166,21 @@ async function mcpResponse(
         { status: 401, headers: { "Cache-Control": "no-store" } }
       );
     }
-    const runtime: RuntimeContext =
-      credential.kind === "legacy"
-        ? {
-            transport: "worker",
-            oauthAdvertised: false,
-            config: appConfig,
-            catalogManager: manager,
-            logger: stderrLogger,
-            auth: {
-              kind: "api-key",
-              source: credential.source,
-              token: credential.token,
-            },
-          }
-        : {
-            transport: "worker",
-            oauthAdvertised: false,
-            config: appConfig,
-            catalogManager: manager,
-            logger: stderrLogger,
-            auth: { kind: "none" },
-          };
+    const runtime: RuntimeContext = {
+      transport: "worker",
+      oauthAdvertised: false,
+      config: appConfig,
+      catalogManager: manager,
+      logger: stderrLogger,
+      auth: {
+        kind: "api-key",
+        source: credential.source,
+        token: credential.token,
+      },
+    };
     return await serveMcp(request, runtime);
   }
 
-  if (credential.kind === "none") {
-    return bearerAuthChallengeResponse(
-      new OAuthError(OAuthErrorCode.InvalidToken, "Bearer authentication is required"),
-      { resourceMetadataUrl: MCP_PROTECTED_RESOURCE_METADATA_URL }
-    );
-  }
   if (credential.kind === "invalid") {
     if (credential.status === 401) return invalidTokenResponse();
     return Response.json(

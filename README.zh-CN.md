@@ -118,6 +118,16 @@ Worker；stdio 仍从本地读取 `JUSTONEAPI_TOKEN`。2.0 发布到 npm 后，�
 
 ## 认证与权限范围
 
+远程服务允许匿名执行 `initialize`、`tools/list`、`ping` 和初始化完成通知。
+`list_platforms`、`search_endpoints`、`get_endpoint_schema` 三个目录工具也无需 Token 或登录，
+只读取公开接口目录，不查询账户，也不调用收费 API。
+
+使用 `2026-07-28` 协议的无状态客户端也可匿名调用 `server/discover`，代替旧版初始化握手。
+
+只有 `call_endpoint`、`get_account_balance`、`get_usage_summary` 需要 API Token 或 OAuth 授权。
+未提供凭据时返回 HTTP 401，客户端可通过 Bearer 认证指引发现授权服务器。公开工具声明为
+`noauth`，受保护工具保留对应的 OAuth scope。
+
 OAuth 用户在授权页选择要绑定的 API Token，不需要把 Token 粘贴进客户端。现有 API Token 远程
 兼容方式使用：
 
@@ -133,11 +143,13 @@ JUSTONEAPI_TOKEN=your_token
 
 本地 stdio 使用上面的环境变量；不要把真实 Token 提交到仓库。
 
-OAuth 按最小权限拆为三个 scope：
+受保护的 OAuth 调用按最小权限使用以下 scope：
 
-- `mcp:catalog:read`：搜索接口、查看接口结构、列出平台。
 - `mcp:api:call`：调用 JustOneAPI 接口。
 - `mcp:account:read`：查看余额和用量。
+
+原有 `mcp:catalog:read` scope 继续兼容已有授权，但目录查询不再要求这个权限。
+如果请求主动携带无效或过期的 OAuth 凭据，仍会拒绝，不会自动降级为匿名请求。
 
 `call_endpoint` 可能按 OAuth 绑定的 API Token 当前价格、权限、余额及预算产生费用。它会先校验
 接口和参数，再换取短时委托 Token，随后只向上游发起一次请求。对于超时、网络异常或 HTTP

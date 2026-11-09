@@ -125,7 +125,7 @@ describe("Worker OAuth HTTP boundary", () => {
         expect(body).toContain("securitySchemes");
         expect(body).toContain("oauth2");
       } else {
-        expect(body).not.toContain("securitySchemes");
+        expect(body).toContain("noauth");
         expect(body).not.toContain("oauth2");
       }
       expect(upstreamFetch).not.toHaveBeenCalled();
@@ -428,7 +428,7 @@ describe("Worker OAuth HTTP boundary", () => {
     }
   );
 
-  it("authenticates before reading an OAuth request body", async () => {
+  it("bounds anonymous request bodies before deciding whether authentication is required", async () => {
     const response = await fetchWorker(
       new Request("https://mcp.justoneapi.com/mcp", {
         method: "POST",
@@ -436,7 +436,7 @@ describe("Worker OAuth HTTP boundary", () => {
         body: "x".repeat(1024 * 1024 + 1),
       })
     );
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(413);
   });
 
   it("rejects an oversized body only after OAuth authentication", async () => {

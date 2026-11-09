@@ -140,6 +140,19 @@ MCP-layer response truncation.
 
 ## Authentication and scopes
 
+The hosted server allows anonymous `initialize`, `tools/list`, `ping`, and the
+initialization notification. The catalog tools `list_platforms`, `search_endpoints`,
+and `get_endpoint_schema` also work without a Token or login. They only read the
+public catalog; they do not query an account or call a paid API.
+
+Stateless clients using protocol `2026-07-28` can use anonymous `server/discover`
+instead of the legacy initialization handshake.
+
+Only `call_endpoint`, `get_account_balance`, and `get_usage_summary` require an
+API Token or OAuth authorization. Missing credentials return HTTP 401; clients
+can use the Bearer challenge to discover the authorization server. Public tools
+are advertised as `noauth`, and protected tools retain their OAuth scopes.
+
 OAuth users select the API Token to link on the authorization page and do not
 paste it into the client. The existing API Token remote compatibility method
 uses:
@@ -157,11 +170,14 @@ JUSTONEAPI_TOKEN=your_token
 Local stdio uses the environment variable above. Never commit a real Token to a
 repository.
 
-OAuth access tokens use three least-privilege scopes:
+Protected OAuth calls use these least-privilege scopes:
 
-- `mcp:catalog:read` — search endpoints, inspect schemas, and list platforms.
 - `mcp:api:call` — call a JustOneAPI endpoint.
 - `mcp:account:read` — view balance and usage.
+
+The existing `mcp:catalog:read` scope remains supported for compatibility with
+previous OAuth grants, but catalog queries no longer require it. Supplied invalid
+or expired OAuth credentials are rejected rather than silently treated as anonymous.
 
 `call_endpoint` may incur charges under the API Token linked during OAuth and
 its current pricing, permissions, balance, and budget. It validates the
