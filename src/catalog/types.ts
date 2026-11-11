@@ -6,6 +6,11 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+export type EndpointArrayItem = {
+  type?: string;
+  enum?: JsonValue[];
+};
+
 export type EndpointParam = {
   name: string;
   api_name: string;
@@ -15,6 +20,9 @@ export type EndpointParam = {
   format?: string;
   default?: JsonValue;
   enum?: JsonValue[];
+  items?: EndpointArrayItem;
+  style?: string;
+  explode?: boolean;
   nullable?: boolean;
   minimum?: number;
   maximum?: number;

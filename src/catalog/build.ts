@@ -29,6 +29,7 @@ type OpenApiSchema = {
   description?: string;
   default?: JsonValue;
   enum?: JsonValue[];
+  items?: OpenApiSchema;
   const?: JsonValue;
   example?: JsonValue;
   examples?: JsonValue[];
@@ -47,6 +48,8 @@ type OpenApiParameter = {
   description?: string;
   required?: boolean;
   schema?: OpenApiSchema;
+  style?: string;
+  explode?: boolean;
 };
 
 type OpenApiOperation = {
@@ -104,7 +107,7 @@ export type BuildCatalogOptions = {
 };
 
 const VERSION_RE = /^v\d+$/i;
-export const CATALOG_GENERATOR_VERSION = "7";
+export const CATALOG_GENERATOR_VERSION = "8";
 
 export function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -387,7 +390,7 @@ function buildParams(
           description: param.description,
         })
       ) {
-        params.push(fromOpenApiParam(param, zhParamDescriptions.get(param.name)));
+        params.push(fromOpenApiParam(param, zhParamDescriptions.get(param.name), source));
         continue;
       }
       assertValidLegacyPaginationException(operationIdentity, param.name);
@@ -398,7 +401,7 @@ function buildParams(
       );
       continue;
     }
-    params.push(fromOpenApiParam(param, zhParamDescriptions.get(param.name)));
+    params.push(fromOpenApiParam(param, zhParamDescriptions.get(param.name), source));
   }
 
   const bodySchemas = requestBodySchemas(operation, zhOperation, source, localizedSource);
@@ -432,6 +435,7 @@ function buildParams(
               location: "body",
               required: required.has(apiName),
               schema: property,
+              source,
               description: localizedProperty?.description,
               descriptionEn: property.description,
             })
@@ -452,6 +456,7 @@ function buildParams(
           location: "body",
           required: required.has(apiName),
           schema: property,
+          source,
           description: localizedProperty?.description,
           descriptionEn: property.description,
         })
@@ -471,15 +476,26 @@ function assertValidLegacyPaginationException(
   }
 }
 
-function fromOpenApiParam(param: OpenApiParameter, descriptionZh?: string): EndpointParam {
-  return fromSchemaParam({
+function fromOpenApiParam(
+  param: OpenApiParameter,
+  descriptionZh: string | undefined,
+  source: OpenApiDocument
+): EndpointParam {
+  const schema = resolveRequestSchema(param.schema, source) ?? {};
+  const result = fromSchemaParam({
     apiName: param.name,
     location: param.in,
     required: Boolean(param.required),
-    schema: param.schema ?? {},
+    schema,
+    source,
     description: descriptionZh,
     descriptionEn: param.description,
   });
+  if (param.in === "query" && schema.type === "array") {
+    result.style = param.style ?? "form";
+    result.explode = param.explode ?? result.style === "form";
+  }
+  return result;
 }
 
 function fromSchemaParam(input: {
@@ -487,9 +503,11 @@ function fromSchemaParam(input: {
   location: EndpointParam["in"];
   required: boolean;
   schema: OpenApiSchema;
+  source: OpenApiDocument;
   description?: string;
   descriptionEn?: string;
 }): EndpointParam {
+  const itemSchema = resolveRequestSchema(input.schema.items, input.source);
   return {
     name: toSnakeCase(input.apiName),
     api_name: input.apiName,
@@ -499,6 +517,7 @@ function fromSchemaParam(input: {
     format: input.schema.format,
     default: input.schema.default,
     enum: input.schema.enum,
+    ...(itemSchema ? { items: { type: itemSchema.type, enum: itemSchema.enum } } : {}),
     nullable: input.schema.nullable,
     minimum: input.schema.minimum,
     maximum: input.schema.maximum,

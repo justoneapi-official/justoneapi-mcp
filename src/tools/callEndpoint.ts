@@ -129,7 +129,9 @@ function convertValue(param: EndpointParam, value: unknown): unknown {
   }
 
   let converted = value;
-  if (param.type === "integer") {
+  if (param.in === "query" && param.type === "array" && param.style !== undefined) {
+    converted = convertQueryArray(param, value);
+  } else if (param.type === "integer") {
     const number = typeof value === "number" ? value : Number(value);
     if (!Number.isInteger(number))
       throw validationError(`Parameter ${param.name} must be an integer.`);
@@ -157,6 +159,54 @@ function convertValue(param: EndpointParam, value: unknown): unknown {
   return converted;
 }
 
+function queryArrayDelimiter(param: EndpointParam): string {
+  if (param.style === "form") return ",";
+  if (param.style === "spaceDelimited" && !queryArrayExplodes(param)) return " ";
+  if (param.style === "pipeDelimited" && !queryArrayExplodes(param)) return "|";
+  throw validationError(`Query array ${param.name} uses an unsupported serialization style.`);
+}
+
+function queryArrayExplodes(param: EndpointParam): boolean {
+  return param.explode ?? param.style === "form";
+}
+
+function convertQueryArray(param: EndpointParam, value: unknown): unknown[] {
+  const delimiter = queryArrayDelimiter(param);
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? queryArrayExplodes(param)
+        ? [value]
+        : value.split(delimiter)
+      : null;
+  if (!values) throw validationError(`Parameter ${param.name} must be an array.`);
+
+  return values.map((item) => {
+    if (item === null || !["string", "number", "boolean"].includes(typeof item)) {
+      throw validationError(`Parameter ${param.name} must contain only primitive values.`);
+    }
+    if (
+      param.items?.enum?.length &&
+      !param.items.enum.some((allowed) => String(allowed) === String(item))
+    ) {
+      throw validationError(`Parameter ${param.name} contains an unknown array item.`, {
+        allowed: param.items.enum,
+      });
+    }
+    return convertValue(
+      {
+        ...param,
+        type: param.items?.type ?? typeof item,
+        enum: param.items?.enum,
+        items: undefined,
+        style: undefined,
+        explode: undefined,
+      },
+      item
+    );
+  });
+}
+
 async function callUpstream(
   endpoint: EndpointCatalogEntry,
   apiParams: Map<EndpointParam, unknown>,
@@ -179,6 +229,23 @@ async function callUpstream(
     if (value === undefined || value === null) continue;
     if (param.in === "body" && useJsonBody) {
       jsonBody[param.api_name] = value;
+      continue;
+    }
+    if (
+      param.in === "query" &&
+      param.type === "array" &&
+      param.style !== undefined &&
+      Array.isArray(value)
+    ) {
+      if (!value.length) {
+        if (param.required) url.searchParams.set(param.api_name, "");
+        continue;
+      }
+      if (param.style === "form" && queryArrayExplodes(param)) {
+        for (const item of value) url.searchParams.append(param.api_name, String(item));
+      } else {
+        url.searchParams.set(param.api_name, value.map(String).join(queryArrayDelimiter(param)));
+      }
       continue;
     }
     const encoded = encodeParamValue(value);

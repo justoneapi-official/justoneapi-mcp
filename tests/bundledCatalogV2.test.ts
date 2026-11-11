@@ -15,7 +15,7 @@ describe("released bundled catalog V2 fail-safe smoke", () => {
   it("passes the complete bundled catalog through the release safety gate", () => {
     expect(() => assertSafeCatalogValue(bundledCatalog, "bundled catalog")).not.toThrow();
     expect(endpoints.every((endpoint) => !endpoint.endpoint_family?.includes(":"))).toBe(true);
-    expect(bundledCatalog.meta.generator_version).toBe("7");
+    expect(bundledCatalog.meta.generator_version).toBe("8");
     expect(bundledCatalog.meta.security).toEqual({
       safety_policy_version: expect.any(String),
     });
