@@ -90,6 +90,7 @@ export async function callEndpoint(input: z.infer<typeof CallEndpointInput>, ctx
 }
 
 function normalizeParams(endpoint: EndpointCatalogEntry, input: Record<string, unknown>) {
+  rejectRemovedHuxuanFansLevels(endpoint, input);
   const byName = new Map(endpoint.params.map((param) => [param.name, param]));
   const byApiName = new Map(endpoint.params.map((param) => [param.api_name, param]));
   const apiParams = new Map<EndpointParam, unknown>();
@@ -120,6 +121,34 @@ function normalizeParams(endpoint: EndpointCatalogEntry, input: Record<string, u
   }
 
   return { apiParams, normalizedParams, warnings };
+}
+
+function rejectRemovedHuxuanFansLevels(
+  endpoint: EndpointCatalogEntry,
+  input: Record<string, unknown>
+): void {
+  if (endpoint.endpoint_id !== "qq_huxuan.cgi_bin_advertiser_mp_publisher_search_v1") return;
+
+  const parameterNames = new Set(endpoint.params.flatMap((param) => [param.name, param.api_name]));
+  if (
+    parameterNames.has("fansLevels") ||
+    parameterNames.has("fans_levels") ||
+    !parameterNames.has("fansMin") ||
+    !parameterNames.has("fansMax")
+  ) {
+    return;
+  }
+
+  // This endpoint replaced fansLevels with fansMin/fansMax and rejects legacy
+  // calls. Do not silently drop that filter and make a billable unfiltered call.
+  // Keep older catalogs on their existing path so the API can reject the field.
+  const removedParam = ["fansLevels", "fans_levels"].find((name) => Object.hasOwn(input, name));
+  if (removedParam) {
+    throw validationError(
+      `Parameter ${removedParam} is no longer supported for this endpoint; use fansMin and fansMax.`,
+      { parameter: removedParam, replacement: ["fansMin", "fansMax"] }
+    );
+  }
 }
 
 function convertValue(param: EndpointParam, value: unknown): unknown {

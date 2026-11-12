@@ -118,6 +118,47 @@ const legacyPaginationBundle: CatalogBundle = {
   },
 };
 
+// Proposed contract fixture only; the committed catalog remains tied to live docs.
+const huxuanNativeFiltersBundle: CatalogBundle = {
+  ...bundle,
+  catalog: {
+    endpoints: [
+      {
+        ...bundle.catalog.endpoints[0],
+        endpoint_id: "qq_huxuan.cgi_bin_advertiser_mp_publisher_search_v1",
+        path: "/api/qq-huxuan/cgi-bin/advertiser/mp_publisher/search/v1",
+        params: [
+          ...bundle.catalog.endpoints[0].params,
+          {
+            name: "creator_types",
+            api_name: "creatorTypes",
+            in: "query",
+            required: false,
+            type: "array",
+            items: { type: "string" },
+            style: "form",
+            explode: false,
+            description: "Native category IDs or legacy names",
+            description_en: "Native category IDs or legacy names",
+          },
+          ...["Min", "Max"].map((bound) => ({
+            name: `fans_${bound.toLowerCase()}`,
+            api_name: `fans${bound}`,
+            in: "query" as const,
+            required: false,
+            type: "integer",
+            format: "int64",
+            minimum: 0,
+            maximum: 4294967295,
+            description: "Complete preset follower-count band boundary",
+            description_en: "Complete preset follower-count band boundary",
+          })),
+        ],
+      },
+    ],
+  },
+};
+
 class MemoryStore implements CatalogStore {
   async load() {
     return bundle;
@@ -160,6 +201,167 @@ function runtime(activeBundle: CatalogBundle = bundle): RuntimeContext {
 describe("callEndpoint", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  describe("removed Huxuan follower filter", () => {
+    it.each(
+      ["fansLevels", "fans_levels"].flatMap((name) =>
+        ["UNDER_5K", ["UNDER_5K"], null, "", [], undefined].map((value) => [name, value])
+      )
+    )("rejects own legacy key %s with value %j before delegation or fetch", async (name, value) => {
+      const exchange = vi.fn(async () => ({ token: "delegated-token", expiresAt: Date.now() }));
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const ctx: RuntimeContext = {
+        ...runtime(huxuanNativeFiltersBundle),
+        transport: "worker",
+        oauthAdvertised: true,
+        auth: {
+          kind: "oauth",
+          accessToken: "mcp-access-token",
+          accessTokenHash: "f".repeat(64),
+          clientId: "client",
+          subject: "subject",
+          connectionId: "connection",
+          scopes: new Set(["mcp:api:call"]),
+          exchange,
+        },
+      };
+
+      await expect(
+        callEndpoint(
+          {
+            endpoint_id: huxuanNativeFiltersBundle.catalog.endpoints[0].endpoint_id,
+            params: { keyword: "coffee", fansMin: 0, fansMax: 9999, [String(name)]: value },
+          },
+          ctx
+        )
+      ).rejects.toMatchObject({
+        payload: {
+          code: "VALIDATION_ERROR",
+          message: expect.stringContaining("use fansMin and fansMax"),
+        },
+      });
+      expect(exchange).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ creatorTypes: [102813, 101309], fansMin: 0, fansMax: 9999 }, "102813,101309", "0", "9999"],
+      [
+        { creator_types: "102813,101309", fans_min: 1000000, fans_max: 4294967295 },
+        "102813,101309",
+        "1000000",
+        "4294967295",
+      ],
+      [
+        { creatorTypes: ["COMEDY_OTHER"], fansMin: 5000, fansMax: 9999 },
+        "COMEDY_OTHER",
+        "5000",
+        "9999",
+      ],
+    ])("encodes new category and numeric bound inputs %j", async (params, categories, min, max) => {
+      const fetchMock = vi.fn(async (_url: URL | RequestInfo) =>
+        Response.json({ code: 0, data: [] })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callEndpoint(
+        {
+          endpoint_id: huxuanNativeFiltersBundle.catalog.endpoints[0].endpoint_id,
+          params: { keyword: "coffee", ...(params as Record<string, unknown>) },
+        },
+        runtime(huxuanNativeFiltersBundle)
+      );
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const url = new URL(String(fetchMock.mock.calls[0][0]));
+      expect(url.searchParams.get("creatorTypes")).toBe(categories);
+      expect(url.searchParams.getAll("creatorTypes")).toHaveLength(1);
+      expect(url.searchParams.get("fansMin")).toBe(min);
+      expect(url.searchParams.get("fansMax")).toBe(max);
+      expect(url.searchParams.has("fansLevels")).toBe(false);
+    });
+
+    it.each(["fansLevels", "fans_levels"])(
+      "preserves a catalog that still declares %s",
+      async (name) => {
+        const legacy = structuredClone(huxuanNativeFiltersBundle);
+        legacy.catalog.endpoints[0].params.push({
+          name: "fans_levels",
+          api_name: "fansLevels",
+          in: "query",
+          required: false,
+          type: "array",
+          items: { type: "string", enum: ["UNDER_5K"] },
+          style: "form",
+          explode: false,
+          description: "Legacy follower band",
+          description_en: "Legacy follower band",
+        });
+        const fetchMock = vi.fn(async (_url: URL | RequestInfo) =>
+          Response.json({ code: 202, message: "use fansMin and fansMax" })
+        );
+        vi.stubGlobal("fetch", fetchMock);
+
+        const result = await callEndpoint(
+          {
+            endpoint_id: legacy.catalog.endpoints[0].endpoint_id,
+            params: { keyword: "coffee", [name]: ["UNDER_5K"] },
+          },
+          runtime(legacy)
+        );
+
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("fansLevels")).toBe(
+          "UNDER_5K"
+        );
+        expect(result).toMatchObject({ success: false, code: 202 });
+      }
+    );
+
+    it.each(["fansMin", "fansMax"])("waits until the catalog includes %s", async (missingName) => {
+      const incomplete = structuredClone(huxuanNativeFiltersBundle);
+      incomplete.catalog.endpoints[0].params = incomplete.catalog.endpoints[0].params.filter(
+        (param) => param.api_name !== missingName
+      );
+      const fetchMock = vi.fn(async () => Response.json({ code: 0, data: [] }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callEndpoint(
+        {
+          endpoint_id: incomplete.catalog.endpoints[0].endpoint_id,
+          params: { keyword: "coffee", fansLevels: "UNDER_5K" },
+        },
+        runtime(incomplete)
+      );
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(result.warnings).toContain("Ignored unknown parameter: fansLevels.");
+    });
+
+    it("keeps unknown parameters as warnings on another endpoint, even with the same path", async () => {
+      const other = structuredClone(huxuanNativeFiltersBundle);
+      other.catalog.endpoints[0].endpoint_id = "test.another_search_v1";
+      const fetchMock = vi.fn(async () => Response.json({ code: 0, data: [] }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callEndpoint(
+        {
+          endpoint_id: other.catalog.endpoints[0].endpoint_id,
+          params: { keyword: "coffee", fansLevels: null, fans_levels: "", extra: "ignored" },
+        },
+        runtime(other)
+      );
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(result.warnings).toEqual([
+        "Ignored unknown parameter: fansLevels.",
+        "Ignored unknown parameter: fans_levels.",
+        "Ignored unknown parameter: extra.",
+      ]);
+    });
   });
 
   it.each(["legacy", "oauth"] as const)(
