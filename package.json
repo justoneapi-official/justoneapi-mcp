@@ -1,6 +1,6 @@
 {
   "name": "justoneapi-mcp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "description": "MCP server for JustOneAPI - expose API endpoints to AI assistants via Model Context Protocol",
   "main": "dist/index.js",
@@ -26,7 +26,7 @@
     "claude",
     "cursor"
   ],
-  "author": "Just One API <support@justoneapi.com>",
+  "author": "JustOneAPI <support@justoneapi.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
